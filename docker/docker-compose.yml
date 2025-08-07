@@ -1,0 +1,72 @@
+services:
+  db:
+    container_name: db
+    image: mysql:8.0
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: laravel_user
+      MYSQL_PASSWORD: laravel_password
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "1234:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: root
+    depends_on:
+      - db
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: laravel_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      # código fuente (usa :cached para acelerar I/O en macOS/WSL2; en Linux quítalo si quieres)
+      - ../app:/var/www:cached
+      # cache de Composer para no reinstalar dependencias cada vez
+      - composer_cache:/root/.composer
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PHP_MEMORY_LIMIT: 512M
+      PHP_UPLOAD_MAX_FILESIZE: 100M
+      PHP_POST_MAX_SIZE: 100M
+      PHP_MAX_EXECUTION_TIME: 300
+    # sin php artisan serve → el proceso principal es php-fpm
+    expose:
+      - "9000"
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+      - "5173:5173"      # para Vite en desarrollo
+    volumes:
+      - ../app:/var/www:cached
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+
+volumes:
+  db_data:
+  composer_cache:
